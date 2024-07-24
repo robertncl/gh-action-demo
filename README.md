@@ -1,4 +1,4 @@
-![Python application test with Github Actions](https://github.com/robertncl/gh-actions-demo/workflows/Python%20application%20test%20with%20Github%20Actions/badge.svg)
+[![Azure Python 3.6](https://github.com/robertncl/gh-action-demo/actions/workflows/main.yaml/badge.svg)](https://github.com/robertncl/gh-action-demo/actions/workflows/main.yaml)
 
 # gh-actions-demo
 This is a repo for building out Github Actions and Tricks.  I test multiple clouds and multiple versions of Python.
