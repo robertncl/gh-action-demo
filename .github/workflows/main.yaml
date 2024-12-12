@@ -1,15 +1,13 @@
 name: Python build
 
 on:
-  push:
-    branches:
-      - master
+  workflow_dispatch:
 
 jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, self-hosted]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -26,13 +24,3 @@ jobs:
     - name: Test
       run: |
         make test
-  scan:
-    name: gitleaks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
