@@ -1,11 +1,7 @@
 name: Maven CD Pipeline
 
 on:
-  workflow_run:
-    workflows: ["Maven CI Pipeline"]
-    types:
-      - completed
-    branches: [ main, develop ]
+  workflow_dispatch:
 
 jobs:
   # Deploy to Staging
