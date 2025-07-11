@@ -12,12 +12,14 @@ This repository contains workflow templates for different project archetypes. Al
 - Multi-JDK testing (Java 8, 11, 17, 21)
 - Maven build, test, and package
 - Code quality checks (SonarQube, SpotBugs, Checkstyle)
-- Security scanning (OWASP Dependency Check)
+- Security scanning (Veracode Static Analysis and SCA)
 - Artifact generation and upload
 
 **Required Secrets**:
 - `SONAR_HOST_URL`: SonarQube server URL
 - `SONAR_TOKEN`: SonarQube authentication token
+- `VERACODE_ID`: Veracode API ID
+- `VERACODE_KEY`: Veracode API Key
 
 **Usage**:
 ```bash
@@ -59,6 +61,7 @@ gh workflow run maven-cd.yaml
 - Code signing and provisioning profiles
 - App Store Connect integration
 - TestFlight deployment
+- Security scanning with Veracode Static Analysis and SCA
 
 **Required Secrets**:
 - `IOS_P12_BASE64`: Base64 encoded iOS certificate
@@ -66,6 +69,8 @@ gh workflow run maven-cd.yaml
 - `APPSTORE_ISSUER_ID`: App Store Connect issuer ID
 - `APPSTORE_API_KEY_ID`: App Store Connect API key ID
 - `APPSTORE_API_PRIVATE_KEY`: App Store Connect private key
+- `VERACODE_ID`: Veracode API ID
+- `VERACODE_KEY`: Veracode API Key
 
 **Usage**:
 ```bash
@@ -84,6 +89,7 @@ gh workflow run react-native-ios.yaml
 - APK and AAB generation
 - Google Play Store deployment
 - Code signing
+- Security scanning with Veracode Static Analysis and SCA
 
 **Required Secrets**:
 - `ANDROID_KEYSTORE_BASE64`: Base64 encoded Android keystore
@@ -91,6 +97,8 @@ gh workflow run react-native-ios.yaml
 - `ANDROID_KEY_ALIAS`: Android key alias
 - `ANDROID_KEY_PASSWORD`: Android key password
 - `PLAY_STORE_CONFIG_JSON`: Google Play Console service account JSON
+- `VERACODE_ID`: Veracode API ID
+- `VERACODE_KEY`: Veracode API Key
 
 **Usage**:
 ```bash
@@ -352,8 +360,8 @@ gh workflow run example-azure-aks-trigger.yaml -f environment=production -f depl
 - Pre-deployment Angular project validation
 - Angular Azure Web App deployment triggering
 - Post-deployment verification and performance testing
-- Lighthouse CI performance and accessibility testing
-- Security scanning with npm audit and Snyk
+- Performance testing with load testing and curl-based metrics
+- Security scanning with Veracode Static Analysis and SCA
 - Bundle size analysis
 - Application Insights monitoring
 - Automatic rollback on failure
