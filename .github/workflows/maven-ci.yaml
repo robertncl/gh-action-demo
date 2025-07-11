@@ -114,15 +114,28 @@ jobs:
         distribution: 'temurin'
         cache: 'maven'
         
-    - name: Run OWASP Dependency Check
-      run: mvn org.owasp:dependency-check-maven:check
-      
+    - name: Setup Veracode
+      uses: veracode/veracode-security-scan@v1
+      with:
+        veracode_id: ${{ secrets.VERACODE_ID }}
+        veracode_key: ${{ secrets.VERACODE_KEY }}
+        
+    - name: Run Veracode Static Analysis
+      run: |
+        # Run Veracode static analysis
+        veracode static-scan --build-name "maven-app-${{ github.run_number }}" --build-id "${{ github.run_number }}"
+        
+    - name: Run Veracode Software Composition Analysis
+      run: |
+        # Run Veracode SCA for dependency scanning
+        veracode sca-scan --build-name "maven-app-${{ github.run_number }}" --build-id "${{ github.run_number }}"
+        
     - name: Upload security report
       uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: security-report
-        path: target/dependency-check-report.html
+        name: veracode-security-report
+        path: veracode-results/
         retention-days: 90
 
   # Build Artifact Job

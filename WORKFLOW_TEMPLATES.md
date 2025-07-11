@@ -139,9 +139,8 @@ gh workflow run azure-aks-deployment.yaml -f environment=production -f image_tag
 - Angular application building with multiple configurations
 - Multi-environment deployments (staging/production)
 - Blue-green deployment using Azure Web App slots
-- Performance testing with Lighthouse CI
-- Security scanning with npm audit and Snyk
-- Accessibility testing with Pa11y
+- Performance testing with load testing and curl-based metrics
+- Security scanning with Veracode Static Analysis and SCA
 - Application Insights monitoring setup
 - Build optimization and compression
 - Comprehensive testing and verification
@@ -153,7 +152,8 @@ gh workflow run azure-aks-deployment.yaml -f environment=production -f image_tag
 - `AZURE_LOCATION`: Azure region
 - `APPINSIGHTS_KEY`: Application Insights instrumentation key
 - `APPINSIGHTS_CONNECTION_STRING`: Application Insights connection string
-- `SNYK_TOKEN`: Snyk security token (optional)
+- `VERACODE_ID`: Veracode API ID
+- `VERACODE_KEY`: Veracode API Key
 
 **Usage**:
 ```bash
