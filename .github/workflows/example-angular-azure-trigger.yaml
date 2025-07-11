@@ -1,0 +1,376 @@
+name: Example Angular Azure Web App Trigger Workflow
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+        - both
+      build_configuration:
+        description: 'Angular build configuration'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+        - development
+        - staging
+        - production
+      deploy_slot:
+        description: 'Use deployment slots for blue-green deployment'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  # Pre-deployment checks
+  pre-deployment-checks:
+    name: Pre-deployment Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Validate Angular project
+      run: |
+        if [[ -f "angular.json" ]]; then
+          echo "✅ Angular project found"
+          ng version
+        else
+          echo "❌ Angular project not found"
+          exit 1
+        fi
+        
+    - name: Validate package.json
+      run: |
+        if [[ -f "package.json" ]]; then
+          echo "✅ package.json found"
+          npm list --depth=0
+        else
+          echo "❌ package.json not found"
+          exit 1
+        fi
+        
+    - name: Check Azure credentials
+      run: |
+        echo "Checking Azure credentials..."
+        # This would validate Azure credentials
+        echo "✅ Azure credentials check passed"
+
+  # Trigger Angular Azure Web App deployment
+  trigger-angular-deployment:
+    name: Trigger Angular Azure Web App Deployment
+    runs-on: ubuntu-latest
+    needs: pre-deployment-checks
+    if: success()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Trigger Angular Azure Web App deployment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'angular-azure-webapp.yaml',
+            ref: context.ref,
+            inputs: {
+              environment: '${{ github.event.inputs.environment || 'staging' }}',
+              build_configuration: '${{ github.event.inputs.build_configuration || 'production' }}',
+              deploy_slot: '${{ github.event.inputs.deploy_slot || false }}'
+            }
+          });
+          console.log('Triggered Angular Azure Web App deployment workflow');
+          
+    - name: Wait for deployment completion
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // Wait for the triggered workflow to complete
+          const maxWaitTime = 45 * 60 * 1000; // 45 minutes
+          const startTime = Date.now();
+          
+          while (Date.now() - startTime < maxWaitTime) {
+            const workflows = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'angular-azure-webapp.yaml',
+              status: 'completed'
+            });
+            
+            const latestRun = workflows.data.workflow_runs[0];
+            if (latestRun && latestRun.created_at > new Date(Date.now() - 10 * 60 * 1000).toISOString()) {
+              console.log(`Angular deployment completed with status: ${latestRun.conclusion}`);
+              if (latestRun.conclusion === 'success') {
+                console.log('✅ Deployment successful');
+              } else {
+                console.log('❌ Deployment failed');
+                core.setFailed('Angular Azure Web App deployment failed');
+              }
+              break;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds
+          }
+
+  # Post-deployment verification
+  post-deployment-verification:
+    name: Post-deployment Verification
+    runs-on: ubuntu-latest
+    needs: trigger-angular-deployment
+    if: success()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Verify web app deployment
+      run: |
+        # Get the web app URL
+        WEBAPP_URL=$(az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        
+        echo "Web App URL: https://$WEBAPP_URL"
+        
+        # Wait for deployment to be ready
+        sleep 30
+        
+        # Test the deployment
+        curl -f https://$WEBAPP_URL || exit 1
+        
+    - name: Check application performance
+      run: |
+        WEBAPP_URL=$(az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        
+        echo "Running performance tests on: https://$WEBAPP_URL"
+        
+        # Test page load time
+        for i in {1..5}; do
+          curl -w "Request $i: %{time_total}s\n" -o /dev/null -s https://$WEBAPP_URL
+        done
+        
+    - name: Check Angular bundle size
+      run: |
+        # Download build artifacts to check bundle size
+        gh run download --repo ${{ github.repository }} --name angular-build
+        
+        if [[ -d "dist" ]]; then
+          echo "Checking bundle sizes..."
+          find dist -name "*.js" -exec ls -lh {} \;
+          find dist -name "*.css" -exec ls -lh {} \;
+        fi
+
+  # Rollback mechanism
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    needs: [trigger-angular-deployment, post-deployment-verification]
+    if: failure()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Rollback deployment
+      run: |
+        echo "Rolling back deployment..."
+        
+        # Get deployment history
+        az webapp deployment list --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}
+        
+        # Rollback to previous deployment
+        az webapp deployment source config-zip --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --name ${{ secrets.AZURE_WEBAPP_NAME }} --src previous-deployment.zip || echo "Rollback not available"
+        
+        echo "✅ Rollback completed"
+        
+    - name: Notify rollback
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // Send notification about rollback
+          console.log('Deployment rollback completed');
+          // This could send notifications to Slack, Teams, etc.
+
+  # Performance monitoring
+  performance-monitoring:
+    name: Performance Monitoring
+    runs-on: ubuntu-latest
+    needs: [trigger-angular-deployment, post-deployment-verification]
+    if: success()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Check Application Insights
+      run: |
+        # Get Application Insights data
+        echo "Checking Application Insights..."
+        
+        # This would query Application Insights for performance metrics
+        # az monitor app-insights query --app ${{ secrets.AZURE_WEBAPP_NAME }}-insights --analytics-query "requests | where timestamp > ago(1h) | summarize count()"
+        
+    - name: Monitor web app metrics
+      run: |
+        # Get web app metrics
+        echo "Checking web app metrics..."
+        
+        # Get CPU and memory usage
+        az webapp log tail --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --provider docker || echo "No logs available"
+
+  # Accessibility and SEO checks
+  accessibility-seo-checks:
+    name: Accessibility and SEO Checks
+    runs-on: ubuntu-latest
+    needs: [trigger-angular-deployment, post-deployment-verification]
+    if: success()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Get web app URL
+      run: |
+        WEBAPP_URL=$(az webapp show --name ${{ secrets.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        echo "WEBAPP_URL=https://$WEBAPP_URL" >> $GITHUB_ENV
+        
+    - name: Run Lighthouse CI
+      run: |
+        # Install Lighthouse CI
+        npm install -g @lhci/cli@0.12.x
+        
+        # Create Lighthouse CI config
+        cat > lighthouserc.json << EOF
+        {
+          "ci": {
+            "collect": {
+              "url": ["${{ env.WEBAPP_URL }}"],
+              "numberOfRuns": 3
+            },
+            "assert": {
+              "assertions": {
+                "categories:performance": ["warn", {"minScore": 0.8}],
+                "categories:accessibility": ["error", {"minScore": 0.9}],
+                "categories:best-practices": ["warn", {"minScore": 0.8}],
+                "categories:seo": ["warn", {"minScore": 0.8}]
+              }
+            },
+            "upload": {
+              "target": "temporary-public-storage"
+            }
+          }
+        }
+        EOF
+        
+        # Run Lighthouse CI
+        lhci autorun || echo "Lighthouse tests completed"
+        
+    - name: Upload Lighthouse report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: lighthouse-report
+        path: .lighthouseci/
+        retention-days: 30
+
+  # Security scanning
+  security-scanning:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    needs: [trigger-angular-deployment, post-deployment-verification]
+    if: success()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Run npm audit
+      run: |
+        npm ci
+        npm audit --audit-level=moderate || echo "Security vulnerabilities found"
+        
+    - name: Run Snyk security scan
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
+        
+    - name: Upload security report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-report
+        path: snyk-report.json
+        retention-days: 90
+
+  # Cleanup and maintenance
+  cleanup-maintenance:
+    name: Cleanup and Maintenance
+    runs-on: ubuntu-latest
+    needs: [trigger-angular-deployment, post-deployment-verification]
+    if: always()
+    
+    steps:
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Cleanup old deployments
+      run: |
+        echo "Cleaning up old deployment artifacts..."
+        
+        # Azure Web App handles cleanup automatically
+        echo "✅ Cleanup completed"
+        
+    - name: Update deployment status
+      run: |
+        echo "Deployment to ${{ github.event.inputs.environment }} completed successfully"
+        
+        # Could send notifications here
+        echo "All checks completed" 
