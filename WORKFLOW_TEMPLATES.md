@@ -344,6 +344,32 @@ gh workflow run example-azure-aks-trigger.yaml -f environment=production -f depl
 gh workflow run example-azure-aks-trigger.yaml -f environment=production -f deploy_infrastructure=true
 ```
 
+### 5. Angular Azure Web App Trigger Example (`example-angular-azure-trigger.yaml`)
+
+**Purpose**: Demonstrates Angular Azure Web App deployment with comprehensive validation and monitoring
+
+**Features**:
+- Pre-deployment Angular project validation
+- Angular Azure Web App deployment triggering
+- Post-deployment verification and performance testing
+- Lighthouse CI performance and accessibility testing
+- Security scanning with npm audit and Snyk
+- Bundle size analysis
+- Application Insights monitoring
+- Automatic rollback on failure
+
+**Usage**:
+```bash
+# Deploy to staging
+gh workflow run example-angular-azure-trigger.yaml -f environment=staging
+
+# Deploy to production with blue-green deployment
+gh workflow run example-angular-azure-trigger.yaml -f environment=production -f deploy_slot=true
+
+# Deploy with custom build configuration
+gh workflow run example-angular-azure-trigger.yaml -f environment=production -f build_configuration=staging
+```
+
 ## Contributing
 
 To add new workflow templates:
