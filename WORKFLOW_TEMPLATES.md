@@ -99,6 +99,38 @@ gh workflow run react-native-ios.yaml
 gh workflow run react-native-android.yaml
 ```
 
+### 5. Azure AKS Deployment (`azure-aks-deployment.yaml`)
+
+**Purpose**: Complete Azure Kubernetes Service deployment pipeline
+
+**Features**:
+- Docker image building and pushing to Azure Container Registry
+- Multi-environment deployments (staging/production)
+- Blue-green and canary deployment strategies
+- Infrastructure as Code with Terraform
+- Monitoring and alerting setup (Prometheus/Grafana)
+- Automatic cleanup of old images
+- Health checks and smoke tests
+
+**Required Secrets**:
+- `AZURE_CREDENTIALS`: Azure service principal credentials
+- `AZURE_REGISTRY_NAME`: Azure Container Registry name
+- `AKS_CLUSTER_NAME`: AKS cluster name
+- `AKS_RESOURCE_GROUP`: AKS resource group name
+- `IMAGE_NAME`: Docker image name (optional, defaults to 'myapp')
+
+**Usage**:
+```bash
+# Deploy to staging
+gh workflow run azure-aks-deployment.yaml -f environment=staging
+
+# Deploy to production with blue-green strategy
+gh workflow run azure-aks-deployment.yaml -f environment=production -f deployment_strategy=blue-green
+
+# Deploy with custom image tag
+gh workflow run azure-aks-deployment.yaml -f environment=production -f image_tag=v1.2.3
+```
+
 ## Setup Instructions
 
 ### For Maven Projects
@@ -250,6 +282,30 @@ gh workflow run example-universal-trigger.yaml
 
 # Force specific project type
 gh workflow run example-universal-trigger.yaml -f project_type=maven
+```
+
+### 4. Azure AKS Trigger Example (`example-azure-aks-trigger.yaml`)
+
+**Purpose**: Demonstrates Azure AKS deployment with comprehensive checks and rollback
+
+**Features**:
+- Pre-deployment validation (Dockerfile, K8s manifests)
+- Azure AKS deployment triggering
+- Post-deployment verification and health checks
+- Automatic rollback on failure
+- Performance testing
+- Resource cleanup
+
+**Usage**:
+```bash
+# Deploy to staging with rolling strategy
+gh workflow run example-azure-aks-trigger.yaml -f environment=staging -f deployment_strategy=rolling
+
+# Deploy to production with blue-green strategy
+gh workflow run example-azure-aks-trigger.yaml -f environment=production -f deployment_strategy=blue-green
+
+# Deploy with infrastructure changes
+gh workflow run example-azure-aks-trigger.yaml -f environment=production -f deploy_infrastructure=true
 ```
 
 ## Contributing

@@ -1,0 +1,277 @@
+name: Example Azure AKS Trigger Workflow
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+        - both
+      deployment_strategy:
+        description: 'Deployment strategy'
+        required: false
+        default: 'rolling'
+        type: choice
+        options:
+        - rolling
+        - blue-green
+        - canary
+      image_tag:
+        description: 'Docker image tag'
+        required: false
+        default: 'latest'
+        type: string
+      deploy_infrastructure:
+        description: 'Deploy infrastructure with Terraform'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  # Pre-deployment checks
+  pre-deployment-checks:
+    name: Pre-deployment Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Validate Dockerfile
+      run: |
+        if [[ -f "Dockerfile" ]]; then
+          echo "✅ Dockerfile found"
+          docker build --dry-run -f Dockerfile .
+        else
+          echo "❌ Dockerfile not found"
+          exit 1
+        fi
+        
+    - name: Validate Kubernetes manifests
+      run: |
+        if [[ -d "k8s" ]]; then
+          echo "✅ Kubernetes manifests found"
+          for file in k8s/**/*.yaml; do
+            if [[ -f "$file" ]]; then
+              echo "Validating $file"
+              kubectl apply --dry-run=client -f "$file"
+            fi
+          done
+        else
+          echo "❌ Kubernetes manifests not found"
+          exit 1
+        fi
+        
+    - name: Check Azure credentials
+      run: |
+        echo "Checking Azure credentials..."
+        # This would validate Azure credentials
+        echo "✅ Azure credentials check passed"
+
+  # Trigger Azure AKS deployment
+  trigger-azure-aks:
+    name: Trigger Azure AKS Deployment
+    runs-on: ubuntu-latest
+    needs: pre-deployment-checks
+    if: success()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Trigger Azure AKS deployment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'azure-aks-deployment.yaml',
+            ref: context.ref,
+            inputs: {
+              environment: '${{ github.event.inputs.environment || 'staging' }}',
+              image_tag: '${{ github.event.inputs.image_tag || 'latest' }}',
+              namespace: 'default',
+              deployment_strategy: '${{ github.event.inputs.deployment_strategy || 'rolling' }}',
+              deploy_infrastructure: '${{ github.event.inputs.deploy_infrastructure || false }}'
+            }
+          });
+          console.log('Triggered Azure AKS deployment workflow');
+          
+    - name: Wait for deployment completion
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // Wait for the triggered workflow to complete
+          const maxWaitTime = 60 * 60 * 1000; // 60 minutes
+          const startTime = Date.now();
+          
+          while (Date.now() - startTime < maxWaitTime) {
+            const workflows = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'azure-aks-deployment.yaml',
+              status: 'completed'
+            });
+            
+            const latestRun = workflows.data.workflow_runs[0];
+            if (latestRun && latestRun.created_at > new Date(Date.now() - 10 * 60 * 1000).toISOString()) {
+              console.log(`Azure AKS deployment completed with status: ${latestRun.conclusion}`);
+              if (latestRun.conclusion === 'success') {
+                console.log('✅ Deployment successful');
+              } else {
+                console.log('❌ Deployment failed');
+                core.setFailed('Azure AKS deployment failed');
+              }
+              break;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds
+          }
+
+  # Post-deployment verification
+  post-deployment-verification:
+    name: Post-deployment Verification
+    runs-on: ubuntu-latest
+    needs: trigger-azure-aks
+    if: success()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Get AKS credentials
+      run: |
+        az aks get-credentials \
+          --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} \
+          --name ${{ secrets.AKS_CLUSTER_NAME }} \
+          --overwrite-existing
+          
+    - name: Verify deployment health
+      run: |
+        # Check if pods are running
+        kubectl get pods -l app=myapp
+        
+        # Check service endpoints
+        kubectl get svc -l app=myapp
+        
+        # Run health checks
+        SERVICE_URL=$(kubectl get svc myapp-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        if [[ -n "$SERVICE_URL" ]]; then
+          echo "Testing health endpoint: http://$SERVICE_URL/health"
+          curl -f http://$SERVICE_URL/health || exit 1
+        else
+          echo "Service URL not available yet"
+        fi
+        
+    - name: Check application logs
+      run: |
+        # Get recent logs from the application
+        kubectl logs -l app=myapp --tail=50
+        
+    - name: Performance test
+      run: |
+        # Simple performance test
+        SERVICE_URL=$(kubectl get svc myapp-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        if [[ -n "$SERVICE_URL" ]]; then
+          echo "Running performance test..."
+          for i in {1..10}; do
+            curl -w "@-" -o /dev/null -s http://$SERVICE_URL/health <<< "time_total: %{time_total}s\n"
+          done
+        fi
+
+  # Rollback mechanism
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    needs: [trigger-azure-aks, post-deployment-verification]
+    if: failure()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Get AKS credentials
+      run: |
+        az aks get-credentials \
+          --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} \
+          --name ${{ secrets.AKS_CLUSTER_NAME }} \
+          --overwrite-existing
+          
+    - name: Rollback deployment
+      run: |
+        echo "Rolling back deployment..."
+        
+        # Get the previous deployment
+        PREVIOUS_DEPLOYMENT=$(kubectl rollout history deployment/myapp --output=jsonpath='{.spec.template.spec.containers[0].image}' | head -1)
+        
+        if [[ -n "$PREVIOUS_DEPLOYMENT" ]]; then
+          echo "Rolling back to: $PREVIOUS_DEPLOYMENT"
+          kubectl rollout undo deployment/myapp
+          kubectl rollout status deployment/myapp --timeout=300s
+          echo "✅ Rollback completed"
+        else
+          echo "❌ No previous deployment found for rollback"
+        fi
+        
+    - name: Notify rollback
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // Send notification about rollback
+          console.log('Deployment rollback completed');
+          // This could send notifications to Slack, Teams, etc.
+
+  # Cleanup on failure
+  cleanup:
+    name: Cleanup on Failure
+    runs-on: ubuntu-latest
+    needs: [trigger-azure-aks, post-deployment-verification]
+    if: failure()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Get AKS credentials
+      run: |
+        az aks get-credentials \
+          --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} \
+          --name ${{ secrets.AKS_CLUSTER_NAME }} \
+          --overwrite-existing
+          
+    - name: Cleanup failed resources
+      run: |
+        echo "Cleaning up failed deployment resources..."
+        
+        # Scale down deployment to prevent resource consumption
+        kubectl scale deployment myapp --replicas=0 || true
+        
+        # Delete any failed pods
+        kubectl delete pods -l app=myapp --field-selector=status.phase=Failed || true
+        
+        echo "✅ Cleanup completed" 
