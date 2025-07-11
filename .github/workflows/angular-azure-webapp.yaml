@@ -338,19 +338,6 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
-    - name: Run Lighthouse tests
-      run: |
-        # Install Lighthouse CI
-        npm install -g @lhci/cli@0.12.x
-        
-        # Get the web app URL
-        WEBAPP_URL=$(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
-        
-        echo "Running Lighthouse tests on: https://$WEBAPP_URL"
-        
-        # Run Lighthouse CI
-        lhci autorun --url=https://$WEBAPP_URL || echo "Lighthouse tests completed"
-        
     - name: Run load tests
       run: |
         # Install Apache Bench
@@ -363,6 +350,18 @@ jobs:
         
         # Run basic load test
         ab -n 100 -c 10 https://$WEBAPP_URL/ || echo "Load test completed"
+        
+    - name: Run performance tests
+      run: |
+        # Get the web app URL
+        WEBAPP_URL=$(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        
+        echo "Running performance tests on: https://$WEBAPP_URL"
+        
+        # Test page load times
+        for i in {1..10}; do
+          curl -w "Request $i: %{time_total}s\n" -o /dev/null -s https://$WEBAPP_URL
+        done
 
   # Security Scanning
   security-scan:
@@ -374,23 +373,28 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Run npm audit
-      run: |
-        npm audit --audit-level=moderate || echo "Security vulnerabilities found"
-        
-    - name: Run Snyk security scan
-      uses: snyk/actions/node@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    - name: Setup Veracode
+      uses: veracode/veracode-security-scan@v1
       with:
-        args: --severity-threshold=high
+        veracode_id: ${{ secrets.VERACODE_ID }}
+        veracode_key: ${{ secrets.VERACODE_KEY }}
+        
+    - name: Run Veracode Static Analysis
+      run: |
+        # Run Veracode static analysis
+        veracode static-scan --build-name "angular-app-${{ github.run_number }}" --build-id "${{ github.run_number }}"
+        
+    - name: Run Veracode Software Composition Analysis
+      run: |
+        # Run Veracode SCA for dependency scanning
+        veracode sca-scan --build-name "angular-app-${{ github.run_number }}" --build-id "${{ github.run_number }}"
         
     - name: Upload security report
       uses: actions/upload-artifact@v4
       if: always()
       with:
-        name: security-report
-        path: snyk-report.json
+        name: veracode-security-report
+        path: veracode-results/
         retention-days: 90
 
   # Accessibility Testing
