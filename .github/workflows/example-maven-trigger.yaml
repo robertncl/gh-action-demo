@@ -1,0 +1,157 @@
+name: Example Maven Trigger Workflow
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+      java_version:
+        description: 'Java version to test'
+        required: false
+        default: '17'
+        type: choice
+        options:
+        - '8'
+        - '11'
+        - '17'
+        - '21'
+
+jobs:
+  # Trigger Maven CI Pipeline
+  trigger-maven-ci:
+    name: Trigger Maven CI
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Trigger Maven CI Pipeline
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'maven-ci.yaml',
+            ref: context.ref,
+            inputs: {
+              java_version: '${{ github.event.inputs.java_version || '17' }}'
+            }
+          })
+          
+    - name: Wait for Maven CI completion
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // Wait for the triggered workflow to complete
+          const maxWaitTime = 30 * 60 * 1000; // 30 minutes
+          const startTime = Date.now();
+          
+          while (Date.now() - startTime < maxWaitTime) {
+            const workflows = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'maven-ci.yaml',
+              status: 'completed'
+            });
+            
+            const latestRun = workflows.data.workflow_runs[0];
+            if (latestRun && latestRun.created_at > new Date(Date.now() - 5 * 60 * 1000).toISOString()) {
+              console.log(`Maven CI completed with status: ${latestRun.conclusion}`);
+              break;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds
+          }
+
+  # Trigger Maven CD Pipeline (only on main branch or manual trigger)
+  trigger-maven-cd:
+    name: Trigger Maven CD
+    runs-on: ubuntu-latest
+    needs: trigger-maven-ci
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Trigger Maven CD Pipeline
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'maven-cd.yaml',
+            ref: context.ref,
+            inputs: {
+              environment: '${{ github.event.inputs.environment || 'staging' }}'
+            }
+          })
+          
+    - name: Wait for Maven CD completion
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // Wait for the triggered workflow to complete
+          const maxWaitTime = 30 * 60 * 1000; // 30 minutes
+          const startTime = Date.now();
+          
+          while (Date.now() - startTime < maxWaitTime) {
+            const workflows = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'maven-cd.yaml',
+              status: 'completed'
+            });
+            
+            const latestRun = workflows.data.workflow_runs[0];
+            if (latestRun && latestRun.created_at > new Date(Date.now() - 5 * 60 * 1000).toISOString()) {
+              console.log(`Maven CD completed with status: ${latestRun.conclusion}`);
+              break;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds
+          }
+
+  # Example: Conditional deployment based on branch
+  conditional-deploy:
+    name: Conditional Deployment
+    runs-on: ubuntu-latest
+    needs: trigger-maven-ci
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Determine deployment environment
+      id: env
+      run: |
+        if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          echo "environment=production" >> $GITHUB_OUTPUT
+        else
+          echo "environment=staging" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Trigger deployment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'maven-cd.yaml',
+            ref: context.ref,
+            inputs: {
+              environment: '${{ steps.env.outputs.environment }}'
+            }
+          }) 
