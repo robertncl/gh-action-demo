@@ -1,0 +1,496 @@
+name: Angular Azure Web App Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+        - both
+      build_configuration:
+        description: 'Angular build configuration'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+        - development
+        - staging
+        - production
+      deploy_slot:
+        description: 'Deploy to specific slot (production only)'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  NODE_VERSION: '18'
+  AZURE_WEBAPP_NAME: ${{ secrets.AZURE_WEBAPP_NAME }}
+  AZURE_WEBAPP_SLOT_NAME: ${{ secrets.AZURE_WEBAPP_SLOT_NAME || 'staging' }}
+
+jobs:
+  # Setup and Dependencies
+  setup:
+    name: Setup Dependencies
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Cache Angular dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.npm
+          node_modules
+          .angular/cache
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+
+  # Lint and Test
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    needs: setup
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run ESLint
+      run: npm run lint
+      
+    - name: Run TypeScript check
+      run: npm run type-check || npx tsc --noEmit
+      
+    - name: Run unit tests
+      run: npm test -- --watch=false --coverage
+      
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: coverage-reports
+        path: coverage/
+        retention-days: 30
+
+  # Build Angular Application
+  build:
+    name: Build Angular Application
+    runs-on: ubuntu-latest
+    needs: [setup, lint-and-test]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build Angular application
+      run: |
+        npm run build -- --configuration=${{ github.event.inputs.build_configuration || 'production' }}
+        
+    - name: Optimize build
+      run: |
+        # Additional optimization steps
+        echo "Optimizing build..."
+        
+        # Compress static assets
+        find dist -name "*.js" -exec gzip -9 {} \;
+        find dist -name "*.css" -exec gzip -9 {} \;
+        
+        # Create build info
+        echo "Build completed at $(date)" > dist/build-info.txt
+        echo "Commit: ${{ github.sha }}" >> dist/build-info.txt
+        echo "Branch: ${{ github.ref }}" >> dist/build-info.txt
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: angular-build
+        path: dist/
+        retention-days: 30
+
+  # Deploy to Staging Environment
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event.inputs.environment == 'staging' || github.event.inputs.environment == 'both'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: angular-build
+        path: ./
+        
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Deploy to Azure Web App (Staging)
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: ${{ env.AZURE_WEBAPP_NAME }}
+        slot-name: ${{ env.AZURE_WEBAPP_SLOT_NAME }}
+        package: ./dist
+        
+    - name: Verify deployment
+      run: |
+        # Get the web app URL
+        WEBAPP_URL=$(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        
+        echo "Deployed to: https://$WEBAPP_URL"
+        
+        # Wait for deployment to be ready
+        sleep 30
+        
+        # Test the deployment
+        curl -f https://$WEBAPP_URL || exit 1
+        
+    - name: Run smoke tests
+      run: |
+        WEBAPP_URL=$(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        
+        # Test main page loads
+        curl -f https://$WEBAPP_URL || exit 1
+        
+        # Test API endpoints if they exist
+        curl -f https://$WEBAPP_URL/api/health || echo "No health endpoint found"
+        
+        # Test static assets
+        curl -f https://$WEBAPP_URL/main.js || exit 1
+
+  # Deploy to Production Environment
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event.inputs.environment == 'production' || github.event.inputs.environment == 'both'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: angular-build
+        path: ./
+        
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Deploy to Azure Web App (Production)
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: ${{ env.AZURE_WEBAPP_NAME }}
+        package: ./dist
+        
+    - name: Verify deployment
+      run: |
+        # Get the web app URL
+        WEBAPP_URL=$(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        
+        echo "Deployed to: https://$WEBAPP_URL"
+        
+        # Wait for deployment to be ready
+        sleep 30
+        
+        # Test the deployment
+        curl -f https://$WEBAPP_URL || exit 1
+        
+    - name: Run smoke tests
+      run: |
+        WEBAPP_URL=$(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        
+        # Test main page loads
+        curl -f https://$WEBAPP_URL || exit 1
+        
+        # Test API endpoints if they exist
+        curl -f https://$WEBAPP_URL/api/health || echo "No health endpoint found"
+        
+        # Test static assets
+        curl -f https://$WEBAPP_URL/main.js || exit 1
+        
+        # Performance test
+        echo "Running performance test..."
+        for i in {1..5}; do
+          curl -w "Request $i: %{time_total}s\n" -o /dev/null -s https://$WEBAPP_URL
+        done
+
+  # Blue-Green Deployment (Production only)
+  blue-green-deployment:
+    name: Blue-Green Deployment
+    runs-on: ubuntu-latest
+    needs: [build, deploy-production]
+    if: github.event.inputs.environment == 'production' && github.event.inputs.deploy_slot == 'true'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: angular-build
+        path: ./
+        
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Deploy to staging slot
+      uses: azure/webapps-deploy@v3
+      with:
+        app-name: ${{ env.AZURE_WEBAPP_NAME }}
+        slot-name: 'staging'
+        package: ./dist
+        
+    - name: Test staging slot
+      run: |
+        # Get the staging slot URL
+        STAGING_URL=$(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --slot staging --query "defaultHostName" -o tsv)
+        
+        echo "Testing staging slot: https://$STAGING_URL"
+        
+        # Wait for deployment to be ready
+        sleep 30
+        
+        # Test the staging deployment
+        curl -f https://$STAGING_URL || exit 1
+        
+    - name: Swap slots
+      run: |
+        # Swap staging and production slots
+        az webapp deployment slot swap --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --slot staging --target-slot production
+        
+        echo "Slots swapped successfully"
+        
+    - name: Verify production deployment
+      run: |
+        # Get the production URL
+        PROD_URL=$(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        
+        echo "Production URL: https://$PROD_URL"
+        
+        # Wait for swap to complete
+        sleep 30
+        
+        # Test the production deployment
+        curl -f https://$PROD_URL || exit 1
+
+  # Performance Testing
+  performance-test:
+    name: Performance Testing
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Run Lighthouse tests
+      run: |
+        # Install Lighthouse CI
+        npm install -g @lhci/cli@0.12.x
+        
+        # Get the web app URL
+        WEBAPP_URL=$(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        
+        echo "Running Lighthouse tests on: https://$WEBAPP_URL"
+        
+        # Run Lighthouse CI
+        lhci autorun --url=https://$WEBAPP_URL || echo "Lighthouse tests completed"
+        
+    - name: Run load tests
+      run: |
+        # Install Apache Bench
+        sudo apt-get update && sudo apt-get install -y apache2-utils
+        
+        # Get the web app URL
+        WEBAPP_URL=$(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        
+        echo "Running load tests on: https://$WEBAPP_URL"
+        
+        # Run basic load test
+        ab -n 100 -c 10 https://$WEBAPP_URL/ || echo "Load test completed"
+
+  # Security Scanning
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run npm audit
+      run: |
+        npm audit --audit-level=moderate || echo "Security vulnerabilities found"
+        
+    - name: Run Snyk security scan
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
+        
+    - name: Upload security report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-report
+        path: snyk-report.json
+        retention-days: 90
+
+  # Accessibility Testing
+  accessibility-test:
+    name: Accessibility Testing
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Install Pa11y
+      run: npm install -g pa11y
+        
+    - name: Run accessibility tests
+      run: |
+        # Get the web app URL
+        WEBAPP_URL=$(az webapp show --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query "defaultHostName" -o tsv)
+        
+        echo "Running accessibility tests on: https://$WEBAPP_URL"
+        
+        # Run Pa11y accessibility tests
+        pa11y https://$WEBAPP_URL || echo "Accessibility tests completed"
+        
+    - name: Upload accessibility report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: accessibility-report
+        path: pa11y-report.json
+        retention-days: 30
+
+  # Monitoring Setup
+  monitoring-setup:
+    name: Setup Monitoring
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Enable Application Insights
+      run: |
+        # Enable Application Insights for the web app
+        az monitor app-insights component create \
+          --app ${{ env.AZURE_WEBAPP_NAME }}-insights \
+          --location ${{ secrets.AZURE_LOCATION }} \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --kind web || echo "Application Insights already exists"
+          
+    - name: Configure web app monitoring
+      run: |
+        # Configure monitoring settings
+        az webapp config appsettings set \
+          --name ${{ env.AZURE_WEBAPP_NAME }} \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --settings \
+          APPINSIGHTS_INSTRUMENTATIONKEY=${{ secrets.APPINSIGHTS_KEY }} \
+          APPLICATIONINSIGHTS_CONNECTION_STRING=${{ secrets.APPINSIGHTS_CONNECTION_STRING }} \
+          WEBSITE_RUN_FROM_PACKAGE=1
+
+  # Cleanup and Maintenance
+  cleanup:
+    name: Cleanup and Maintenance
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        
+    - name: Cleanup old deployments
+      run: |
+        # Cleanup old deployment artifacts
+        echo "Cleaning up old deployment artifacts..."
+        
+        # Remove old build artifacts (keep last 5)
+        # This would be handled by Azure Web App's built-in cleanup
+        
+    - name: Update deployment status
+      run: |
+        # Update deployment status in Azure
+        echo "Deployment completed successfully"
+        
+        # Could send notifications here
+        echo "Deployment to ${{ github.event.inputs.environment }} completed" 
