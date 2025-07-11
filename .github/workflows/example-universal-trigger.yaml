@@ -1,0 +1,237 @@
+name: Example Universal Trigger Workflow
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      project_type:
+        description: 'Project type to build'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+        - auto
+        - maven
+        - react-native-ios
+        - react-native-android
+        - react-native-both
+      force_trigger:
+        description: 'Force trigger even if auto-detection fails'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  # Detect project type
+  detect-project:
+    name: Detect Project Type
+    runs-on: ubuntu-latest
+    outputs:
+      project-type: ${{ steps.detect.outputs.project-type }}
+      has-pom: ${{ steps.detect.outputs.has-pom }}
+      has-package-json: ${{ steps.detect.outputs.has-package-json }}
+      has-ios: ${{ steps.detect.outputs.has-ios }}
+      has-android: ${{ steps.detect.outputs.has-android }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Detect project type
+      id: detect
+      run: |
+        # Check for Maven project
+        if [[ -f "pom.xml" ]]; then
+          echo "has-pom=true" >> $GITHUB_OUTPUT
+          if [[ "${{ github.event.inputs.project_type }}" == "maven" || "${{ github.event.inputs.project_type }}" == "auto" ]]; then
+            echo "project-type=maven" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "has-pom=false" >> $GITHUB_OUTPUT
+        fi
+        
+        # Check for React Native project
+        if [[ -f "package.json" ]]; then
+          echo "has-package-json=true" >> $GITHUB_OUTPUT
+          
+          # Check for iOS
+          if [[ -d "ios" && -f "ios/Podfile" ]]; then
+            echo "has-ios=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-ios=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check for Android
+          if [[ -d "android" && -f "android/build.gradle" ]]; then
+            echo "has-android=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-android=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Determine React Native type
+          if [[ "${{ github.event.inputs.project_type }}" == "react-native-ios" ]] || \
+             ([[ "${{ github.event.inputs.project_type }}" == "auto" ]] && [[ "${{ steps.detect.outputs.has-ios }}" == "true" ]] && [[ "${{ steps.detect.outputs.has-android }}" == "false" ]]); then
+            echo "project-type=react-native-ios" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event.inputs.project_type }}" == "react-native-android" ]] || \
+               ([[ "${{ github.event.inputs.project_type }}" == "auto" ]] && [[ "${{ steps.detect.outputs.has-android }}" == "true" ]] && [[ "${{ steps.detect.outputs.has-ios }}" == "false" ]]); then
+            echo "project-type=react-native-android" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event.inputs.project_type }}" == "react-native-both" ]] || \
+               ([[ "${{ github.event.inputs.project_type }}" == "auto" ]] && [[ "${{ steps.detect.outputs.has-ios }}" == "true" ]] && [[ "${{ steps.detect.outputs.has-android }}" == "true" ]]); then
+            echo "project-type=react-native-both" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "has-package-json=false" >> $GITHUB_OUTPUT
+        fi
+        
+        # If no project type detected and force trigger is enabled, default to Maven
+        if [[ -z "${{ steps.detect.outputs.project-type }}" ]] && [[ "${{ github.event.inputs.force_trigger }}" == "true" ]]; then
+          echo "project-type=maven" >> $GITHUB_OUTPUT
+        fi
+
+  # Trigger Maven workflows
+  trigger-maven:
+    name: Trigger Maven Workflows
+    runs-on: ubuntu-latest
+    needs: detect-project
+    if: needs.detect-project.outputs.project-type == 'maven'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Trigger Maven CI
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'maven-ci.yaml',
+            ref: context.ref
+          });
+          console.log('Triggered Maven CI workflow');
+          
+    - name: Trigger Maven CD (if on main/develop)
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'maven-cd.yaml',
+            ref: context.ref
+          });
+          console.log('Triggered Maven CD workflow');
+
+  # Trigger React Native iOS workflow
+  trigger-react-native-ios:
+    name: Trigger React Native iOS
+    runs-on: ubuntu-latest
+    needs: detect-project
+    if: needs.detect-project.outputs.project-type == 'react-native-ios'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Trigger iOS Build
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'react-native-ios.yaml',
+            ref: context.ref
+          });
+          console.log('Triggered React Native iOS workflow');
+
+  # Trigger React Native Android workflow
+  trigger-react-native-android:
+    name: Trigger React Native Android
+    runs-on: ubuntu-latest
+    needs: detect-project
+    if: needs.detect-project.outputs.project-type == 'react-native-android'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Trigger Android Build
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'react-native-android.yaml',
+            ref: context.ref
+          });
+          console.log('Triggered React Native Android workflow');
+
+  # Trigger both React Native workflows
+  trigger-react-native-both:
+    name: Trigger React Native Both Platforms
+    runs-on: ubuntu-latest
+    needs: detect-project
+    if: needs.detect-project.outputs.project-type == 'react-native-both'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Trigger iOS Build
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'react-native-ios.yaml',
+            ref: context.ref
+          });
+          console.log('Triggered React Native iOS workflow');
+          
+    - name: Trigger Android Build
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'react-native-android.yaml',
+            ref: context.ref
+          });
+          console.log('Triggered React Native Android workflow');
+
+  # Report project type
+  report-detection:
+    name: Report Project Detection
+    runs-on: ubuntu-latest
+    needs: [detect-project, trigger-maven, trigger-react-native-ios, trigger-react-native-android, trigger-react-native-both]
+    if: always()
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Report detection results
+      run: |
+        echo "Project Type: ${{ needs.detect-project.outputs.project-type }}"
+        echo "Has POM: ${{ needs.detect-project.outputs.has-pom }}"
+        echo "Has Package.json: ${{ needs.detect-project.outputs.has-package-json }}"
+        echo "Has iOS: ${{ needs.detect-project.outputs.has-ios }}"
+        echo "Has Android: ${{ needs.detect-project.outputs.has-android }}"
+        
+        if [[ -z "${{ needs.detect-project.outputs.project-type }}" ]]; then
+          echo "❌ No project type detected!"
+          echo "Available project files:"
+          ls -la
+          exit 1
+        else
+          echo "✅ Project type detected: ${{ needs.detect-project.outputs.project-type }}"
+        fi 

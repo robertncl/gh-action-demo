@@ -1,0 +1,229 @@
+name: Example React Native Trigger Workflow
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+        - ios
+        - android
+        - both
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+        - debug
+        - release
+        - both
+      upload_store:
+        description: 'Upload to app stores'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  # Trigger React Native iOS Build
+  trigger-ios-build:
+    name: Trigger iOS Build
+    runs-on: ubuntu-latest
+    if: github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'both' || github.event_name != 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Trigger iOS Build Pipeline
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'react-native-ios.yaml',
+            ref: context.ref,
+            inputs: {
+              build_type: '${{ github.event.inputs.build_type || 'debug' }}',
+              upload_store: '${{ github.event.inputs.upload_store || false }}'
+            }
+          })
+          
+    - name: Wait for iOS Build completion
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // Wait for the triggered workflow to complete
+          const maxWaitTime = 45 * 60 * 1000; // 45 minutes for iOS builds
+          const startTime = Date.now();
+          
+          while (Date.now() - startTime < maxWaitTime) {
+            const workflows = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'react-native-ios.yaml',
+              status: 'completed'
+            });
+            
+            const latestRun = workflows.data.workflow_runs[0];
+            if (latestRun && latestRun.created_at > new Date(Date.now() - 5 * 60 * 1000).toISOString()) {
+              console.log(`iOS Build completed with status: ${latestRun.conclusion}`);
+              break;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds
+          }
+
+  # Trigger React Native Android Build
+  trigger-android-build:
+    name: Trigger Android Build
+    runs-on: ubuntu-latest
+    if: github.event.inputs.platform == 'android' || github.event.inputs.platform == 'both' || github.event_name != 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Trigger Android Build Pipeline
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'react-native-android.yaml',
+            ref: context.ref,
+            inputs: {
+              build_type: '${{ github.event.inputs.build_type || 'debug' }}',
+              upload_store: '${{ github.event.inputs.upload_store || false }}'
+            }
+          })
+          
+    - name: Wait for Android Build completion
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // Wait for the triggered workflow to complete
+          const maxWaitTime = 30 * 60 * 1000; // 30 minutes for Android builds
+          const startTime = Date.now();
+          
+          while (Date.now() - startTime < maxWaitTime) {
+            const workflows = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'react-native-android.yaml',
+              status: 'completed'
+            });
+            
+            const latestRun = workflows.data.workflow_runs[0];
+            if (latestRun && latestRun.created_at > new Date(Date.now() - 5 * 60 * 1000).toISOString()) {
+              console.log(`Android Build completed with status: ${latestRun.conclusion}`);
+              break;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds
+          }
+
+  # Example: Parallel builds for both platforms
+  parallel-builds:
+    name: Parallel Platform Builds
+    runs-on: ubuntu-latest
+    needs: [trigger-ios-build, trigger-android-build]
+    if: github.event.inputs.platform == 'both' || github.event_name != 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download iOS artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: ios-ipa
+        path: ./ios-artifacts
+        
+    - name: Download Android artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: android-bundle
+        path: ./android-artifacts
+        
+    - name: Create release with artifacts
+      uses: actions/github-script@v7
+      if: github.ref == 'refs/heads/main'
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          // Create release
+          const release = await github.rest.repos.createRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag_name: `v${context.runNumber}`,
+            name: `Release v${context.runNumber}`,
+            body: `Cross-platform build for commit ${context.sha}`,
+            draft: false,
+            prerelease: false
+          });
+          
+          // Upload iOS IPA
+          const iosFiles = fs.readdirSync('./ios-artifacts');
+          for (const file of iosFiles) {
+            if (file.endsWith('.ipa')) {
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.data.id,
+                name: file,
+                data: fs.readFileSync(path.join('./ios-artifacts', file))
+              });
+            }
+          }
+          
+          // Upload Android AAB
+          const androidFiles = fs.readdirSync('./android-artifacts');
+          for (const file of androidFiles) {
+            if (file.endsWith('.aab')) {
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.data.id,
+                name: file,
+                data: fs.readFileSync(path.join('./android-artifacts', file))
+              });
+            }
+          }
+
+  # Example: Conditional store uploads
+  conditional-store-upload:
+    name: Conditional Store Upload
+    runs-on: ubuntu-latest
+    needs: [trigger-ios-build, trigger-android-build]
+    if: github.event.inputs.upload_store == 'true' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Trigger TestFlight upload
+      if: github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'both'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // This would trigger a TestFlight upload workflow
+          console.log('Triggering TestFlight upload...');
+          
+    - name: Trigger Play Store upload
+      if: github.event.inputs.platform == 'android' || github.event.inputs.platform == 'both'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // This would trigger a Play Store upload workflow 

@@ -192,6 +192,66 @@ env:
   ACTIONS_RUNNER_DEBUG: true
 ```
 
+## Example Trigger Workflows
+
+### 1. Maven Trigger Example (`example-maven-trigger.yaml`)
+
+**Purpose**: Demonstrates how to trigger Maven CI/CD workflows with different scenarios
+
+**Features**:
+- Manual trigger with environment and Java version selection
+- Automatic triggering on push/PR to main/develop
+- Conditional deployment based on branch
+- Workflow completion monitoring
+
+**Usage**:
+```bash
+# Manual trigger with custom parameters
+gh workflow run example-maven-trigger.yaml -f environment=production -f java_version=17
+
+# Automatic trigger on push/PR
+git push origin main
+```
+
+### 2. React Native Trigger Example (`example-react-native-trigger.yaml`)
+
+**Purpose**: Demonstrates how to trigger React Native iOS/Android builds
+
+**Features**:
+- Platform selection (iOS, Android, or both)
+- Build type selection (debug, release, or both)
+- Optional app store uploads
+- Parallel platform builds
+- Cross-platform release creation
+
+**Usage**:
+```bash
+# Build both platforms
+gh workflow run example-react-native-trigger.yaml -f platform=both -f build_type=release
+
+# Build iOS only with store upload
+gh workflow run example-react-native-trigger.yaml -f platform=ios -f upload_store=true
+```
+
+### 3. Universal Trigger Example (`example-universal-trigger.yaml`)
+
+**Purpose**: Automatically detects project type and triggers appropriate workflows
+
+**Features**:
+- Automatic project type detection
+- Support for Maven, React Native iOS, Android, or both
+- Manual override options
+- Comprehensive project analysis
+
+**Usage**:
+```bash
+# Auto-detect and trigger
+gh workflow run example-universal-trigger.yaml
+
+# Force specific project type
+gh workflow run example-universal-trigger.yaml -f project_type=maven
+```
+
 ## Contributing
 
 To add new workflow templates:
