@@ -131,6 +131,42 @@ gh workflow run azure-aks-deployment.yaml -f environment=production -f deploymen
 gh workflow run azure-aks-deployment.yaml -f environment=production -f image_tag=v1.2.3
 ```
 
+### 6. Angular Azure Web App Deployment (`angular-azure-webapp.yaml`)
+
+**Purpose**: Complete Angular application build and deployment to Azure Web App
+
+**Features**:
+- Angular application building with multiple configurations
+- Multi-environment deployments (staging/production)
+- Blue-green deployment using Azure Web App slots
+- Performance testing with Lighthouse CI
+- Security scanning with npm audit and Snyk
+- Accessibility testing with Pa11y
+- Application Insights monitoring setup
+- Build optimization and compression
+- Comprehensive testing and verification
+
+**Required Secrets**:
+- `AZURE_CREDENTIALS`: Azure service principal credentials
+- `AZURE_WEBAPP_NAME`: Azure Web App name
+- `AZURE_RESOURCE_GROUP`: Azure resource group name
+- `AZURE_LOCATION`: Azure region
+- `APPINSIGHTS_KEY`: Application Insights instrumentation key
+- `APPINSIGHTS_CONNECTION_STRING`: Application Insights connection string
+- `SNYK_TOKEN`: Snyk security token (optional)
+
+**Usage**:
+```bash
+# Deploy to staging
+gh workflow run angular-azure-webapp.yaml -f environment=staging
+
+# Deploy to production with blue-green strategy
+gh workflow run angular-azure-webapp.yaml -f environment=production -f deploy_slot=true
+
+# Deploy with custom build configuration
+gh workflow run angular-azure-webapp.yaml -f environment=production -f build_configuration=staging
+```
+
 ## Setup Instructions
 
 ### For Maven Projects
