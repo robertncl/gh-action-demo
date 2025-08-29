@@ -11,8 +11,8 @@ on:
         description: Days threshold before restart
         required: false
         default: '30'
-  schedule:
-    - cron: '21 3 * * *'
+  #schedule:
+  #  - cron: '21 3 * * *'
 
 permissions:
   id-token: write
