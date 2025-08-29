@@ -1,0 +1,6 @@
+# subscriptionId,resourceGroup,clusterName,namespace,deploymentName,kubeContextName
+# Lines starting with # are comments. The sixth column is optional.
+00000000-0000-0000-0000-000000000000,my-rg,aks-prod,default,my-deployment,prod-aks
+00000000-0000-0000-0000-000000000000,my-rg,aks-staging,default,my-deployment,staging-aks
+
+

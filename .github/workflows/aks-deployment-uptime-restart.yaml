@@ -1,0 +1,56 @@
+name: AKS Deployment Uptime Check & Restart
+
+on:
+  workflow_dispatch:
+    inputs:
+      clusters_file_path:
+        description: Path to clusters CSV in repo
+        required: true
+        default: .github/aks/clusters.csv
+      days_threshold:
+        description: Days threshold before restart
+        required: false
+        default: '30'
+  schedule:
+    - cron: '21 3 * * *'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  check-and-restart:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python (for human age formatting)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Validate clusters file exists
+        run: |
+          test -f "${{ inputs.clusters_file_path }}" || {
+            echo "Clusters file not found: ${{ inputs.clusters_file_path }}" >&2
+            exit 1
+          }
+
+      - name: Run uptime check
+        shell: bash
+        run: |
+          chmod +x .github/scripts/check-aks-uptime.sh
+          .github/scripts/check-aks-uptime.sh "${{ inputs.clusters_file_path }}" "${{ inputs.days_threshold }}"
+
+
