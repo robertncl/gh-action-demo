@@ -1,0 +1,20 @@
+[
+  {
+    "subscriptionId": "00000000-0000-0000-0000-000000000000",
+    "resourceGroup": "my-rg",
+    "clusterName": "aks-prod",
+    "namespace": "default",
+    "deploymentName": "my-deployment",
+    "kubeContextName": "prod-aks"
+  },
+  {
+    "subscriptionId": "00000000-0000-0000-0000-000000000000",
+    "resourceGroup": "my-rg",
+    "clusterName": "aks-staging",
+    "namespace": "default",
+    "deploymentName": "my-deployment",
+    "kubeContextName": "staging-aks"
+  }
+]
+
+

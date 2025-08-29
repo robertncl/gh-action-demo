@@ -3,16 +3,14 @@
 set -euo pipefail
 
 # check-aks-uptime.sh
-# Reads a clusters file and, for each AKS cluster + deployment entry, checks when the
+# Reads a clusters JSON file and, for each AKS cluster + deployment entry, checks when the
 # deployment last progressed. If older than threshold days, performs a rollout restart.
 #
-# File format (CSV with header):
-# subscriptionId,resourceGroup,clusterName,namespace,deploymentName[,kubeContextName]
-# - Lines starting with '#' and blank lines are ignored
-# - Optional 6th column kubeContextName will be used for informative logs only
+# File format (JSON): an array of objects with keys
+#   subscriptionId, resourceGroup, clusterName, namespace, deploymentName, kubeContextName (optional)
 #
 # Usage:
-#   ./check-aks-uptime.sh <clusters_file> [days_threshold]
+#   ./check-aks-uptime.sh <clusters_json_file> [days_threshold]
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
   echo "Usage: $0 <clusters_file> [days_threshold]" >&2
@@ -37,28 +35,35 @@ if ! command -v kubectl >/dev/null 2>&1; then
   exit 5
 fi
 
+if ! command -v jq >/dev/null 2>&1; then
+  echo "jq is required." >&2
+  exit 6
+fi
+
 # Convert threshold to seconds for comparison
 THRESHOLD_SECONDS=$(( DAYS_THRESHOLD * 24 * 60 * 60 ))
 
 echo "Using threshold: ${DAYS_THRESHOLD} days (${THRESHOLD_SECONDS}s)"
 
-line_no=0
-while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
-  line_no=$(( line_no + 1 ))
-  line="${raw_line%%[$'\r\n']*}"
+# Validate JSON structure
+if ! jq -e '. | type == "array"' "$CLUSTERS_FILE" >/dev/null; then
+  echo "Clusters file must be a JSON array: $CLUSTERS_FILE" >&2
+  exit 7
+fi
 
-  # Skip header, comments, and blank lines
-  if [[ -z "$line" || "$line" =~ ^# ]]; then
-    continue
-  fi
-  if [[ $line_no -eq 1 && "$line" =~ subscriptionId,resourceGroup,clusterName,namespace,deploymentName ]]; then
-    continue
-  fi
+# Iterate over entries safely via base64 encoding
+for row in $(jq -r '.[] | @base64' "$CLUSTERS_FILE"); do
+  _jq() { echo "$row" | base64 -d | jq -r "$1"; }
 
-  IFS=',' read -r subscription_id resource_group cluster_name namespace deployment_name kube_context_name <<<"$line"
+  subscription_id=$(_jq '.subscriptionId // empty')
+  resource_group=$(_jq '.resourceGroup // empty')
+  cluster_name=$(_jq '.clusterName // empty')
+  namespace=$(_jq '.namespace // empty')
+  deployment_name=$(_jq '.deploymentName // empty')
+  kube_context_name=$(_jq '.kubeContextName // empty')
 
-  if [[ -z "${subscription_id:-}" || -z "${resource_group:-}" || -z "${cluster_name:-}" || -z "${namespace:-}" || -z "${deployment_name:-}" ]]; then
-    echo "[WARN] Skipping line $line_no due to missing required fields: $line" >&2
+  if [[ -z "$subscription_id" || -z "$resource_group" || -z "$cluster_name" || -z "$namespace" || -z "$deployment_name" ]]; then
+    echo "[WARN] Skipping entry due to missing required fields: $(echo "$row" | base64 -d)" >&2
     continue
   fi
 
@@ -125,7 +130,7 @@ PY
   else
     echo "Age < threshold. No action for ${namespace}/${deployment_name}."
   fi
-done < "$CLUSTERS_FILE"
+done
 
 echo "\nAll entries processed."
 

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       clusters_file_path:
-        description: Path to clusters CSV in repo
+        description: Path to clusters JSON in repo
         required: true
-        default: .github/aks/clusters.csv
+        default: .github/aks/clusters.json
       days_threshold:
         description: Days threshold before restart
         required: false
@@ -39,6 +39,9 @@ jobs:
 
       - name: Install kubectl
         uses: azure/setup-kubectl@v4
+
+      - name: Install jq
+        run: sudo apt-get update -y && sudo apt-get install -y jq
 
       - name: Validate clusters file exists
         run: |
