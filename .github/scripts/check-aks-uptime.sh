@@ -10,15 +10,29 @@ set -euo pipefail
 #   subscriptionId, resourceGroup, clusterName, namespace, deploymentName, kubeContextName (optional)
 #
 # Usage:
-#   ./check-aks-uptime.sh <clusters_json_file> [days_threshold]
+#   ./check-aks-uptime.sh <clusters_json_file> [days_threshold] [verify_restart] [max_wait_time]
+#
+# Environment variables:
+#   VERIFY_RESTART: Set to "true" to enable restart verification (default: true)
+#   MAX_WAIT_TIME: Maximum time to wait for restart completion in seconds (default: 300)
+#   CHECK_INTERVAL: Interval between status checks in seconds (default: 10)
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
-  echo "Usage: $0 <clusters_file> [days_threshold]" >&2
+if [[ $# -lt 1 || $# -gt 4 ]]; then
+  echo "Usage: $0 <clusters_file> [days_threshold] [verify_restart] [max_wait_time]" >&2
+  echo "  verify_restart: true/false to enable/disable restart verification (default: true)" >&2
+  echo "  max_wait_time: Maximum seconds to wait for restart completion (default: 300)" >&2
   exit 2
 fi
 
 CLUSTERS_FILE="$1"
 DAYS_THRESHOLD="${2:-30}"
+VERIFY_RESTART="${3:-true}"
+MAX_WAIT_TIME="${4:-300}"
+
+# Environment variable overrides
+VERIFY_RESTART="${VERIFY_RESTART_ENV:-$VERIFY_RESTART}"
+MAX_WAIT_TIME="${MAX_WAIT_TIME_ENV:-$MAX_WAIT_TIME}"
+CHECK_INTERVAL="${CHECK_INTERVAL_ENV:-10}"
 
 if [[ ! -f "$CLUSTERS_FILE" ]]; then
   echo "Clusters file not found: $CLUSTERS_FILE" >&2
@@ -50,6 +64,74 @@ if ! jq -e '. | type == "array"' "$CLUSTERS_FILE" >/dev/null; then
   echo "Clusters file must be a JSON array: $CLUSTERS_FILE" >&2
   exit 7
 fi
+
+# Function to verify restart completion
+verify_restart_completion() {
+  local namespace="$1"
+  local deployment_name="$2"
+  local max_wait_time="${3:-300}"  # Default 5 minutes
+  local check_interval="${4:-10}"  # Check every 10 seconds
+  
+  echo "Verifying restart completion for ${namespace}/${deployment_name}..."
+  echo "  Max wait time: ${max_wait_time}s, Check interval: ${check_interval}s"
+  
+  local start_time=$(date +%s)
+  local end_time=$((start_time + max_wait_time))
+  local check_count=0
+  
+  while [[ $(date +%s) -lt $end_time ]]; do
+    check_count=$((check_count + 1))
+    
+    # Check if deployment exists
+    if ! kubectl get deploy "$deployment_name" -n "$namespace" >/dev/null 2>&1; then
+      echo "❌ Deployment ${namespace}/${deployment_name} not found"
+      return 1
+    fi
+    
+    # Check if deployment is available and updated
+    local available=$(kubectl get deploy "$deployment_name" -n "$namespace" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo "0")
+    local desired=$(kubectl get deploy "$deployment_name" -n "$namespace" -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+    local updated=$(kubectl get deploy "$deployment_name" -n "$namespace" -o jsonpath='{.status.updatedReplicas}' 2>/dev/null || echo "0")
+    local ready=$(kubectl get deploy "$deployment_name" -n "$namespace" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    local unavailable=$(kubectl get deploy "$deployment_name" -n "$namespace" -o jsonpath='{.status.unavailableReplicas}' 2>/dev/null || echo "0")
+    
+    # Check rollout status with shorter timeout
+    local rollout_status=$(kubectl rollout status deployment/"$deployment_name" -n "$namespace" --timeout=5s 2>&1 || true)
+    
+    echo "  [Check ${check_count}] Status: Available: ${available}/${desired}, Updated: ${updated}, Ready: ${ready}, Unavailable: ${unavailable}"
+    
+    # Check if rollout is complete
+    if [[ "$rollout_status" == *"successfully rolled out"* ]]; then
+      echo "✅ Restart completed successfully for ${namespace}/${deployment_name}"
+      return 0
+    fi
+    
+    # Check if all replicas are available and updated
+    if [[ "$available" == "$desired" && "$updated" == "$desired" && "$ready" == "$desired" && "$desired" != "0" && "$unavailable" == "0" ]]; then
+      echo "✅ All replicas are ready and updated for ${namespace}/${deployment_name}"
+      return 0
+    fi
+    
+    # Check for failed rollout
+    if [[ "$rollout_status" == *"error"* ]] || [[ "$rollout_status" == *"failed"* ]]; then
+      echo "❌ Rollout failed for ${namespace}/${deployment_name}: $rollout_status"
+      return 1
+    fi
+    
+    # Check for stuck deployment
+    if [[ "$unavailable" != "0" && $check_count -gt 10 ]]; then
+      echo "⚠️  Deployment may be stuck with ${unavailable} unavailable replicas"
+    fi
+    
+    local remaining_time=$((end_time - $(date +%s)))
+    echo "  Waiting for restart to complete... (${remaining_time}s remaining, ${check_interval}s interval)"
+    sleep "$check_interval"
+  done
+  
+  echo "❌ Restart verification timed out after ${max_wait_time}s for ${namespace}/${deployment_name}"
+  echo "  Final status: Available: ${available}/${desired}, Updated: ${updated}, Ready: ${ready}, Unavailable: ${unavailable}"
+  return 1
+}
 
 # Iterate over entries safely via base64 encoding
 for row in $(jq -r '.[] | @base64' "$CLUSTERS_FILE"); do
@@ -124,6 +206,18 @@ PY
     # Perform rollout restart
     if kubectl rollout restart deployment/"$deployment_name" -n "$namespace"; then
       echo "Restart triggered for ${namespace}/${deployment_name}."
+      
+      # Verify restart completion if enabled
+      if [[ "$VERIFY_RESTART" == "true" ]]; then
+        if verify_restart_completion "$namespace" "$deployment_name" "$MAX_WAIT_TIME" "$CHECK_INTERVAL"; then
+          echo "✅ Restart verification passed for ${namespace}/${deployment_name}"
+        else
+          echo "❌ Restart verification failed for ${namespace}/${deployment_name}" >&2
+          # Continue processing other deployments even if one fails
+        fi
+      else
+        echo "⚠️  Restart verification disabled for ${namespace}/${deployment_name}"
+      fi
     else
       echo "[ERROR] Failed to restart ${namespace}/${deployment_name}." >&2
     fi
