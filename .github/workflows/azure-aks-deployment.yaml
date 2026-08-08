@@ -36,13 +36,13 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       
     - name: Log in to Azure
-      uses: azure/login@v1
+      uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
@@ -52,7 +52,7 @@ jobs:
         
     - name: Extract metadata
       id: meta
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
       with:
         images: ${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}
         tags: |
@@ -64,7 +64,7 @@ jobs:
           type=raw,value=${{ github.event.inputs.image_tag }}
           
     - name: Build and push Docker image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
       with:
         context: .
         push: true
@@ -75,7 +75,7 @@ jobs:
         platforms: linux/amd64,linux/arm64
         
     - name: Upload Docker image info
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: docker-image-info
         path: |
@@ -92,10 +92,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       
     - name: Log in to Azure
-      uses: azure/login@v1
+      uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
@@ -147,10 +147,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       
     - name: Log in to Azure
-      uses: azure/login@v1
+      uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
@@ -202,10 +202,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       
     - name: Log in to Azure
-      uses: azure/login@v1
+      uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
@@ -266,10 +266,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       
     - name: Log in to Azure
-      uses: azure/login@v1
+      uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
@@ -320,15 +320,15 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
+      uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
       with:
         terraform_version: '1.5.0'
         
     - name: Log in to Azure
-      uses: azure/login@v1
+      uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
@@ -348,7 +348,7 @@ jobs:
         terraform apply -auto-approve tfplan
         
     - name: Upload Terraform state
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: terraform-state
         path: terraform/terraform.tfstate
@@ -363,10 +363,10 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       
     - name: Log in to Azure
-      uses: azure/login@v1
+      uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
@@ -406,7 +406,7 @@ jobs:
     
     steps:
     - name: Log in to Azure
-      uses: azure/login@v1
+      uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
         
