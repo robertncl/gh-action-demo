@@ -1,6 +1,5 @@
-pytest==8.4.2
+pytest==9.1.1
 click==8.4.2
-pylint==3.3.9
-pytest-cov==6.3.0
-# transitive dep of pylint; 4.11.1 held back by cooloff (published <24h ago), pinned to last vetted release
-platformdirs==4.11.0
+pylint==4.0.7
+pytest-cov==7.1.0
+platformdirs==4.11.2
