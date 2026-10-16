@@ -192,7 +192,7 @@ jobs:
         pod install --repo-update
 
     - name: Setup code signing
-      uses: apple-actions/import-codesigning-certs@v1
+      uses: apple-actions/import-codesign-certs@77ba2a2a8f5cfc8c405ebf3159f767c323e238f9 # v7.1.0
       with:
         p12-file-base64: ${{ secrets.IOS_P12_BASE64 }}
         p12-password: ${{ secrets.IOS_P12_PASSWORD }}
@@ -245,7 +245,7 @@ jobs:
         path: ./
         
     - name: Upload to TestFlight
-      uses: apple-actions/upload-testflight@v1
+      uses: apple-actions/upload-testflight-build@155ea93be9ee6d5186c71f660a612f5eddb14510 # v5.6.0
       with:
         app-path: '*.ipa'
         issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}

@@ -27,6 +27,8 @@ env:
   IMAGE_NAME: ${{ secrets.IMAGE_NAME || 'myapp' }}
   AKS_CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
   AKS_RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+  # Free-text input: reference it in scripts only as "$NAMESPACE", never as an inline expression
+  NAMESPACE: ${{ github.event.inputs.namespace }}
 
 jobs:
   # Build and Push Docker Image
@@ -108,7 +110,7 @@ jobs:
           
     - name: Create namespace if not exists
       run: |
-        kubectl create namespace ${{ github.event.inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
         
     - name: Deploy to staging
       run: |
@@ -116,23 +118,23 @@ jobs:
         sed -i "s|IMAGE_TAG|${{ needs.build-and-push.outputs.image_tag }}|g" k8s/staging/*.yaml
         
         # Apply Kubernetes manifests
-        kubectl apply -f k8s/staging/ -n ${{ github.event.inputs.namespace }}
+        kubectl apply -f k8s/staging/ -n "$NAMESPACE"
         
         # Wait for deployment to be ready
-        kubectl rollout status deployment/${{ env.IMAGE_NAME }} -n ${{ github.event.inputs.namespace }} --timeout=300s
+        kubectl rollout status deployment/${{ env.IMAGE_NAME }} -n "$NAMESPACE" --timeout=300s
         
     - name: Verify deployment
       run: |
         # Check if pods are running
-        kubectl get pods -n ${{ github.event.inputs.namespace }} -l app=${{ env.IMAGE_NAME }}
+        kubectl get pods -n "$NAMESPACE" -l app=${{ env.IMAGE_NAME }}
         
         # Check service endpoints
-        kubectl get svc -n ${{ github.event.inputs.namespace }} -l app=${{ env.IMAGE_NAME }}
+        kubectl get svc -n "$NAMESPACE" -l app=${{ env.IMAGE_NAME }}
         
     - name: Run smoke tests
       run: |
         # Get service URL
-        SERVICE_URL=$(kubectl get svc -n ${{ github.event.inputs.namespace }} -l app=${{ env.IMAGE_NAME }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
+        SERVICE_URL=$(kubectl get svc -n "$NAMESPACE" -l app=${{ env.IMAGE_NAME }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
         
         # Run basic health check
         curl -f http://$SERVICE_URL/health || exit 1
@@ -163,7 +165,7 @@ jobs:
           
     - name: Create namespace if not exists
       run: |
-        kubectl create namespace ${{ github.event.inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
         
     - name: Deploy to production
       run: |
@@ -171,23 +173,23 @@ jobs:
         sed -i "s|IMAGE_TAG|${{ needs.build-and-push.outputs.image_tag }}|g" k8s/production/*.yaml
         
         # Apply Kubernetes manifests
-        kubectl apply -f k8s/production/ -n ${{ github.event.inputs.namespace }}
+        kubectl apply -f k8s/production/ -n "$NAMESPACE"
         
         # Wait for deployment to be ready
-        kubectl rollout status deployment/${{ env.IMAGE_NAME }} -n ${{ github.event.inputs.namespace }} --timeout=300s
+        kubectl rollout status deployment/${{ env.IMAGE_NAME }} -n "$NAMESPACE" --timeout=300s
         
     - name: Verify deployment
       run: |
         # Check if pods are running
-        kubectl get pods -n ${{ github.event.inputs.namespace }} -l app=${{ env.IMAGE_NAME }}
+        kubectl get pods -n "$NAMESPACE" -l app=${{ env.IMAGE_NAME }}
         
         # Check service endpoints
-        kubectl get svc -n ${{ github.event.inputs.namespace }} -l app=${{ env.IMAGE_NAME }}
+        kubectl get svc -n "$NAMESPACE" -l app=${{ env.IMAGE_NAME }}
         
     - name: Run smoke tests
       run: |
         # Get service URL
-        SERVICE_URL=$(kubectl get svc -n ${{ github.event.inputs.namespace }} -l app=${{ env.IMAGE_NAME }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
+        SERVICE_URL=$(kubectl get svc -n "$NAMESPACE" -l app=${{ env.IMAGE_NAME }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
         
         # Run basic health check
         curl -f http://$SERVICE_URL/health || exit 1
@@ -220,7 +222,7 @@ jobs:
       id: versions
       run: |
         # Get current version
-        CURRENT_VERSION=$(kubectl get deployment ${{ env.IMAGE_NAME }} -n ${{ github.event.inputs.namespace }} -o jsonpath='{.spec.template.spec.containers[0].image}' | cut -d: -f2)
+        CURRENT_VERSION=$(kubectl get deployment ${{ env.IMAGE_NAME }} -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' | cut -d: -f2)
         echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
         
         # New version is the image tag
@@ -233,27 +235,27 @@ jobs:
     - name: Deploy new version (Green)
       run: |
         # Create new deployment with new image
-        kubectl set image deployment/${{ env.IMAGE_NAME }}-green ${{ env.IMAGE_NAME }}=${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.new_version }} -n ${{ github.event.inputs.namespace }}
+        kubectl set image deployment/${{ env.IMAGE_NAME }}-green ${{ env.IMAGE_NAME }}=${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.new_version }} -n "$NAMESPACE"
         
         # Wait for green deployment to be ready
-        kubectl rollout status deployment/${{ env.IMAGE_NAME }}-green -n ${{ github.event.inputs.namespace }} --timeout=300s
+        kubectl rollout status deployment/${{ env.IMAGE_NAME }}-green -n "$NAMESPACE" --timeout=300s
         
     - name: Switch traffic to new version
       run: |
         # Update service to point to green deployment
-        kubectl patch svc ${{ env.IMAGE_NAME }}-service -n ${{ github.event.inputs.namespace }} -p '{"spec":{"selector":{"app":"${{ env.IMAGE_NAME }}-green"}}}'
+        kubectl patch svc ${{ env.IMAGE_NAME }}-service -n "$NAMESPACE" -p '{"spec":{"selector":{"app":"${{ env.IMAGE_NAME }}-green"}}}'
         
     - name: Verify new deployment
       run: |
         # Run health checks on new deployment
-        SERVICE_URL=$(kubectl get svc -n ${{ github.event.inputs.namespace }} -l app=${{ env.IMAGE_NAME }}-green -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
+        SERVICE_URL=$(kubectl get svc -n "$NAMESPACE" -l app=${{ env.IMAGE_NAME }}-green -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
         curl -f http://$SERVICE_URL/health || exit 1
         
     - name: Rollback if needed
       if: failure()
       run: |
         # Switch back to blue deployment
-        kubectl patch svc ${{ env.IMAGE_NAME }}-service -n ${{ github.event.inputs.namespace }} -p '{"spec":{"selector":{"app":"${{ env.IMAGE_NAME }}-blue"}}}'
+        kubectl patch svc ${{ env.IMAGE_NAME }}-service -n "$NAMESPACE" -p '{"spec":{"selector":{"app":"${{ env.IMAGE_NAME }}-blue"}}}'
         echo "Rolled back to previous version"
 
   # Canary Deployment (Production only)
@@ -283,13 +285,13 @@ jobs:
     - name: Deploy canary (10% traffic)
       run: |
         # Create canary deployment
-        kubectl apply -f k8s/canary/ -n ${{ github.event.inputs.namespace }}
+        kubectl apply -f k8s/canary/ -n "$NAMESPACE"
         
         # Update canary deployment with new image
-        kubectl set image deployment/${{ env.IMAGE_NAME }}-canary ${{ env.IMAGE_NAME }}=${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }} -n ${{ github.event.inputs.namespace }}
+        kubectl set image deployment/${{ env.IMAGE_NAME }}-canary ${{ env.IMAGE_NAME }}=${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }} -n "$NAMESPACE"
         
         # Wait for canary to be ready
-        kubectl rollout status deployment/${{ env.IMAGE_NAME }}-canary -n ${{ github.event.inputs.namespace }} --timeout=300s
+        kubectl rollout status deployment/${{ env.IMAGE_NAME }}-canary -n "$NAMESPACE" --timeout=300s
         
     - name: Monitor canary performance
       run: |
@@ -298,18 +300,18 @@ jobs:
         sleep 300
         
         # Check canary metrics
-        kubectl top pods -n ${{ github.event.inputs.namespace }} -l app=${{ env.IMAGE_NAME }}-canary
+        kubectl top pods -n "$NAMESPACE" -l app=${{ env.IMAGE_NAME }}-canary
         
     - name: Promote canary to full deployment
       run: |
         # Scale up main deployment
-        kubectl scale deployment ${{ env.IMAGE_NAME }} --replicas=9 -n ${{ github.event.inputs.namespace }}
+        kubectl scale deployment ${{ env.IMAGE_NAME }} --replicas=9 -n "$NAMESPACE"
         
         # Scale down canary
-        kubectl scale deployment ${{ env.IMAGE_NAME }}-canary --replicas=0 -n ${{ github.event.inputs.namespace }}
+        kubectl scale deployment ${{ env.IMAGE_NAME }}-canary --replicas=0 -n "$NAMESPACE"
         
         # Update main deployment with new image
-        kubectl set image deployment/${{ env.IMAGE_NAME }} ${{ env.IMAGE_NAME }}=${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }} -n ${{ github.event.inputs.namespace }}
+        kubectl set image deployment/${{ env.IMAGE_NAME }} ${{ env.IMAGE_NAME }}=${{ env.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }} -n "$NAMESPACE"
 
   # Infrastructure as Code (Terraform)
   terraform-deploy:

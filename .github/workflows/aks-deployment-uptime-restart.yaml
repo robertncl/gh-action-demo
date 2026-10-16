@@ -44,16 +44,21 @@ jobs:
         run: sudo apt-get update -y && sudo apt-get install -y jq
 
       - name: Validate clusters file exists
+        env:
+          CLUSTERS_FILE_PATH: ${{ inputs.clusters_file_path }}
         run: |
-          test -f "${{ inputs.clusters_file_path }}" || {
-            echo "Clusters file not found: ${{ inputs.clusters_file_path }}" >&2
+          test -f "$CLUSTERS_FILE_PATH" || {
+            echo "Clusters file not found: $CLUSTERS_FILE_PATH" >&2
             exit 1
           }
 
       - name: Run uptime check
         shell: bash
+        env:
+          CLUSTERS_FILE_PATH: ${{ inputs.clusters_file_path }}
+          DAYS_THRESHOLD: ${{ inputs.days_threshold }}
         run: |
           chmod +x .github/scripts/check-aks-uptime.sh
-          .github/scripts/check-aks-uptime.sh "${{ inputs.clusters_file_path }}" "${{ inputs.days_threshold }}"
+          .github/scripts/check-aks-uptime.sh "$CLUSTERS_FILE_PATH" "$DAYS_THRESHOLD"
 
 
