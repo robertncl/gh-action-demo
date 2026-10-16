@@ -219,7 +219,7 @@ All workflows use environment variables for easy customization:
 
 ```yaml
 env:
-  NODE_VERSION: '18'
+  NODE_VERSION: '24'
   JAVA_VERSION: '17'
   MAVEN_OPTS: -Dfile.encoding=UTF-8
 ```

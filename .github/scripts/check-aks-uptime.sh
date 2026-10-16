@@ -34,6 +34,15 @@ VERIFY_RESTART="${VERIFY_RESTART_ENV:-$VERIFY_RESTART}"
 MAX_WAIT_TIME="${MAX_WAIT_TIME_ENV:-$MAX_WAIT_TIME}"
 CHECK_INTERVAL="${CHECK_INTERVAL_ENV:-10}"
 
+# Must be plain integers: bash arithmetic evaluates variable contents as expressions,
+# so a value like 'a[$(cmd)]' would execute cmd.
+for numeric in DAYS_THRESHOLD MAX_WAIT_TIME CHECK_INTERVAL; do
+  if ! [[ "${!numeric}" =~ ^[0-9]+$ ]]; then
+    echo "${numeric} must be a non-negative integer, got: ${!numeric}" >&2
+    exit 2
+  fi
+done
+
 if [[ ! -f "$CLUSTERS_FILE" ]]; then
   echo "Clusters file not found: $CLUSTERS_FILE" >&2
   exit 3

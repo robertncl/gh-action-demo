@@ -90,6 +90,8 @@ jobs:
       
     - name: Trigger Azure AKS deployment
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      env:
+        IMAGE_TAG: ${{ github.event.inputs.image_tag || 'latest' }}
       with:
         script: |
           await github.rest.actions.createWorkflowDispatch({
@@ -99,7 +101,7 @@ jobs:
             ref: context.ref,
             inputs: {
               environment: '${{ github.event.inputs.environment || 'staging' }}',
-              image_tag: '${{ github.event.inputs.image_tag || 'latest' }}',
+              image_tag: process.env.IMAGE_TAG,
               namespace: 'default',
               deployment_strategy: '${{ github.event.inputs.deployment_strategy || 'rolling' }}',
               deploy_infrastructure: '${{ github.event.inputs.deploy_infrastructure || false }}'

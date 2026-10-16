@@ -28,7 +28,7 @@ on:
         type: boolean
 
 env:
-  NODE_VERSION: '18'
+  NODE_VERSION: '24'
   AZURE_WEBAPP_NAME: ${{ secrets.AZURE_WEBAPP_NAME }}
   AZURE_WEBAPP_SLOT_NAME: ${{ secrets.AZURE_WEBAPP_SLOT_NAME || 'staging' }}
 
