@@ -122,7 +122,7 @@ spec:
         fsGroup: 65534
       containers:
       - name: nginx
-        image: nginx:1.21-alpine
+        image: nginx:1.30-alpine
         ports:
         - containerPort: 80
         # Security: Security context and resource limits
