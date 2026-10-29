@@ -112,7 +112,7 @@ jobs:
       run: npm ci
       
     - name: Setup Ruby
-      uses: ruby/setup-ruby@26e5b7d197ebf60545ee9667bcbace0be11ccaec # v1.334.0
+      uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
       with:
         ruby-version: ${{ env.RUBY_VERSION }}
         bundler-cache: true
@@ -181,7 +181,7 @@ jobs:
       run: npm ci
       
     - name: Setup Ruby
-      uses: ruby/setup-ruby@26e5b7d197ebf60545ee9667bcbace0be11ccaec # v1.334.0
+      uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
       with:
         ruby-version: ${{ env.RUBY_VERSION }}
         bundler-cache: true
@@ -245,7 +245,7 @@ jobs:
         path: ./
         
     - name: Upload to TestFlight
-      uses: apple-actions/upload-testflight-build@155ea93be9ee6d5186c71f660a612f5eddb14510 # v5.6.0
+      uses: apple-actions/upload-testflight-build@958b2fe4969e2ab1824f79f07c270b950f06bb3a # v5.8.0
       with:
         app-path: '*.ipa'
         issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
