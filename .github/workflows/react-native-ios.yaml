@@ -112,7 +112,7 @@ jobs:
       run: npm ci
       
     - name: Setup Ruby
-      uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+      uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
       with:
         ruby-version: ${{ env.RUBY_VERSION }}
         bundler-cache: true
@@ -181,7 +181,7 @@ jobs:
       run: npm ci
       
     - name: Setup Ruby
-      uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
+      uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
       with:
         ruby-version: ${{ env.RUBY_VERSION }}
         bundler-cache: true
@@ -192,13 +192,13 @@ jobs:
         pod install --repo-update
 
     - name: Setup code signing
-      uses: apple-actions/import-codesign-certs@77ba2a2a8f5cfc8c405ebf3159f767c323e238f9 # v7.1.0
+      uses: apple-actions/import-codesign-certs@288b8ec97b82c66b6f2a6baaf7acc8dfbcbe331c # v7.2.0
       with:
         p12-file-base64: ${{ secrets.IOS_P12_BASE64 }}
         p12-password: ${{ secrets.IOS_P12_PASSWORD }}
         
     - name: Setup provisioning profile
-      uses: apple-actions/download-provisioning-profiles@230860ab5f632551a5f9a5e1d98a774485463888 # v7.0.0
+      uses: apple-actions/download-provisioning-profiles@233aa54e59082c0e8a8cf8b0b02c72dea2422ef9 # v7.1.0
       with:
         bundle-id: 'com.yourapp.bundleid'
         profile-type: 'IOS_APP_STORE'
@@ -245,7 +245,7 @@ jobs:
         path: ./
         
     - name: Upload to TestFlight
-      uses: apple-actions/upload-testflight-build@958b2fe4969e2ab1824f79f07c270b950f06bb3a # v5.8.0
+      uses: apple-actions/upload-testflight-build@665328adbecbc3ad929d3da710696d928b8a7ba9 # v5.9.0
       with:
         app-path: '*.ipa'
         issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
