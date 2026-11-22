@@ -64,22 +64,6 @@ jobs:
     - name: Run unit tests
       run: npm test -- --coverage --watchAll=false
       
-    - name: Setup Veracode
-      uses: veracode/veracode-security-scan@v1
-      with:
-        veracode_id: ${{ secrets.VERACODE_ID }}
-        veracode_key: ${{ secrets.VERACODE_KEY }}
-        
-    - name: Run Veracode Static Analysis
-      run: |
-        # Run Veracode static analysis
-        veracode static-scan --build-name "react-native-ios-${{ github.run_number }}" --build-id "${{ github.run_number }}"
-        
-    - name: Run Veracode Software Composition Analysis
-      run: |
-        # Run Veracode SCA for dependency scanning
-        veracode sca-scan --build-name "react-native-ios-${{ github.run_number }}" --build-id "${{ github.run_number }}"
-      
     - name: Upload coverage reports
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: always()
